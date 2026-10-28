@@ -1,0 +1,108 @@
+# ============================================================
+# 用在：主流程「H 改地址校验」
+# 输入变量（在节点「输入变量」里逐个添加，名字必须一模一样）：
+#   order_id ← A会话预处理/order_id
+#   buyer_id ← 开始/buyer_id
+#   shop ← 开始/shop
+#   new_address ← G提取新地址/new_address
+# 输出变量（在节点「输出变量」里添加，名字和类型必须一模一样）：
+#   answer（String）
+#   pending_action（String）
+# 用法：全选本文件（Cmd+A）→ 复制 → 在 Dify 代码框里全选后粘贴覆盖
+# ============================================================
+import json
+import re
+from datetime import datetime, timedelta
+
+# 演示用的「现在」。固定住时间，评测结果才能复现；想用真实时间可改成 datetime.now() 的格式化字符串
+DEMO_NOW = "2026-10-26 14:00"
+
+# ---- 假订单数据（全部虚构）----
+ORDERS = {
+    'QY20261025001': {'order_id': 'QY20261025001', 'buyer_id': 'U1001', 'shop': '清屿官方旗舰店', 'brand': '清屿', 'item': '清屿 洗衣凝珠 52颗', 'qty': 1, 'amount': 59.9, 'gift': None, 'cold_chain': False, 'freight_insurance': False, 'order_time': '2026-10-25 10:12', 'status': '待发货', 'ship_time': None, 'sign_time': None, 'carrier': None, 'tracking_no': None, 'trace': [], 'receiver': {'name': '林小姐', 'phone': '138****2201', 'address': '广州市天河区天河北路233号云峰广场'}, 'aftersale': None},
+    'QY20261022002': {'order_id': 'QY20261022002', 'buyer_id': 'U1001', 'shop': '清屿官方旗舰店', 'brand': '清屿', 'item': '清屿 香氛洗衣液 3kg×2', 'qty': 1, 'amount': 89.0, 'gift': None, 'cold_chain': False, 'freight_insurance': False, 'order_time': '2026-10-22 09:30', 'status': '待发货', 'ship_time': None, 'sign_time': None, 'carrier': None, 'tracking_no': None, 'trace': [], 'receiver': {'name': '林小姐', 'phone': '138****2201', 'address': '广州市天河区天河北路233号云峰广场'}, 'aftersale': None},
+    'QY20261024003': {'order_id': 'QY20261024003', 'buyer_id': 'U1002', 'shop': '清屿官方旗舰店', 'brand': '清屿', 'item': '清屿 柔顺剂 2L', 'qty': 1, 'amount': 49.9, 'gift': None, 'cold_chain': False, 'freight_insurance': False, 'order_time': '2026-10-24 20:15', 'status': '待发货', 'ship_time': None, 'sign_time': None, 'carrier': None, 'tracking_no': None, 'trace': [], 'receiver': {'name': '陈先生', 'phone': '139****5512', 'address': '广州市天河区体育西路111号星汇中心'}, 'aftersale': None},
+    'QY20261023004': {'order_id': 'QY20261023004', 'buyer_id': 'U1002', 'shop': '清屿官方旗舰店', 'brand': '清屿', 'item': '清屿 厨房重油污清洁喷雾 500ml×3', 'qty': 1, 'amount': 45.0, 'gift': None, 'cold_chain': False, 'freight_insurance': False, 'order_time': '2026-10-23 11:00', 'status': '已发货', 'ship_time': '2026-10-24 16:20', 'sign_time': None, 'carrier': '远航快递', 'tracking_no': 'ZT78012345610', 'trace': [['2026-10-24 16:20', '商家已发货，快递员已揽收【广州白云仓】'], ['2026-10-25 02:10', '快件已到达【广州转运中心】'], ['2026-10-26 09:15', '快件已到达【广州天河体育西营业部】，正在安排派送']], 'receiver': {'name': '陈先生', 'phone': '139****5512', 'address': '广州市天河区体育西路111号星汇中心'}, 'aftersale': None},
+    'QY20261018005': {'order_id': 'QY20261018005', 'buyer_id': 'U1003', 'shop': '清屿官方旗舰店', 'brand': '清屿', 'item': '清屿 家清囤货礼盒', 'qty': 1, 'amount': 259.0, 'gift': None, 'cold_chain': False, 'freight_insurance': False, 'order_time': '2026-10-18 13:00', 'status': '已签收', 'ship_time': '2026-10-19 10:00', 'sign_time': '2026-10-21 15:30', 'carrier': '远航快递', 'tracking_no': 'ZT26101800588', 'trace': [['2026-10-19 10:00', '商家已发货，快递员已揽收'], ['2026-10-19 23:30', '快件已到达【转运中心】'], ['2026-10-21 15:30', '快件已签收，签收人：本人。感谢使用远航快递（广州市）']], 'receiver': {'name': '王女士', 'phone': '137****8823', 'address': '广州市越秀区环市东路339号'}, 'aftersale': None},
+    'QY20261008006': {'order_id': 'QY20261008006', 'buyer_id': 'U1003', 'shop': '清屿官方旗舰店', 'brand': '清屿', 'item': '清屿 洗衣凝珠 52颗', 'qty': 1, 'amount': 59.9, 'gift': None, 'cold_chain': False, 'freight_insurance': False, 'order_time': '2026-10-08 08:00', 'status': '已签收', 'ship_time': '2026-10-09 10:00', 'sign_time': '2026-10-15 18:00', 'carrier': '远航快递', 'tracking_no': 'ZT26100800688', 'trace': [['2026-10-09 10:00', '商家已发货，快递员已揽收'], ['2026-10-09 23:30', '快件已到达【转运中心】'], ['2026-10-15 18:00', '快件已签收，签收人：本人。感谢使用远航快递（广州市）']], 'receiver': {'name': '王女士', 'phone': '137****8823', 'address': '广州市越秀区环市东路339号'}, 'aftersale': None},
+    'QY20261021007': {'order_id': 'QY20261021007', 'buyer_id': 'U1004', 'shop': '清屿官方旗舰店', 'brand': '清屿', 'item': '清屿 香氛洗衣液 3kg×2', 'qty': 1, 'amount': 89.0, 'gift': None, 'cold_chain': False, 'freight_insurance': True, 'order_time': '2026-10-21 21:00', 'status': '已签收', 'ship_time': '2026-10-22 11:00', 'sign_time': '2026-10-24 12:00', 'carrier': '远航快递', 'tracking_no': 'ZT26102100788', 'trace': [['2026-10-22 11:00', '商家已发货，快递员已揽收'], ['2026-10-22 23:30', '快件已到达【转运中心】'], ['2026-10-24 12:00', '快件已签收，签收人：本人。感谢使用远航快递（深圳市）']], 'receiver': {'name': '赵先生', 'phone': '136****4410', 'address': '深圳市福田区福华三路88号'}, 'aftersale': None},
+    'QY20261012008': {'order_id': 'QY20261012008', 'buyer_id': 'U1004', 'shop': '清屿官方旗舰店', 'brand': '清屿', 'item': '清屿 柔顺剂 2L', 'qty': 1, 'amount': 49.9, 'gift': None, 'cold_chain': False, 'freight_insurance': False, 'order_time': '2026-10-12 10:00', 'status': '已签收', 'ship_time': '2026-10-12 17:00', 'sign_time': '2026-10-14 11:00', 'carrier': '远航快递', 'tracking_no': 'ZT26101200888', 'trace': [['2026-10-12 17:00', '商家已发货，快递员已揽收'], ['2026-10-12 23:30', '快件已到达【转运中心】'], ['2026-10-14 11:00', '快件已签收，签收人：本人。感谢使用远航快递（深圳市）']], 'receiver': {'name': '赵先生', 'phone': '136****4410', 'address': '深圳市福田区福华三路88号'}, 'aftersale': None},
+    'QY20261019009': {'order_id': 'QY20261019009', 'buyer_id': 'U1005', 'shop': '清屿官方旗舰店', 'brand': '清屿', 'item': '清屿 香氛洗衣液 3kg×2', 'qty': 1, 'amount': 89.0, 'gift': None, 'cold_chain': False, 'freight_insurance': False, 'order_time': '2026-10-19 20:00', 'status': '已签收', 'ship_time': '2026-10-23 10:00', 'sign_time': '2026-10-25 10:00', 'carrier': '远航快递', 'tracking_no': 'ZT26101900988', 'trace': [['2026-10-23 10:00', '商家已发货，快递员已揽收'], ['2026-10-23 23:30', '快件已到达【转运中心】'], ['2026-10-25 10:00', '快件已签收，签收人：本人。感谢使用远航快递（佛山市）']], 'receiver': {'name': '黄女士', 'phone': '135****7731', 'address': '佛山市顺德区大良街道德民路12号'}, 'aftersale': None},
+    'QY20261016010': {'order_id': 'QY20261016010', 'buyer_id': 'U1005', 'shop': '清屿官方旗舰店', 'brand': '清屿', 'item': '清屿 厨房重油污清洁喷雾 500ml×3', 'qty': 1, 'amount': 45.0, 'gift': None, 'cold_chain': False, 'freight_insurance': False, 'order_time': '2026-10-16 12:00', 'status': '已签收', 'ship_time': '2026-10-17 10:00', 'sign_time': '2026-10-20 17:00', 'carrier': '远航快递', 'tracking_no': 'ZT26101601088', 'trace': [['2026-10-17 10:00', '商家已发货，快递员已揽收'], ['2026-10-17 23:30', '快件已到达【转运中心】'], ['2026-10-20 17:00', '快件已签收，签收人：本人。感谢使用远航快递（佛山市）']], 'receiver': {'name': '黄女士', 'phone': '135****7731', 'address': '佛山市顺德区大良街道德民路12号'}, 'aftersale': None},
+    'QY20261001011': {'order_id': 'QY20261001011', 'buyer_id': 'U1006', 'shop': '清屿官方旗舰店', 'brand': '清屿', 'item': '清屿 洗衣凝珠 52颗', 'qty': 1, 'amount': 59.9, 'gift': None, 'cold_chain': False, 'freight_insurance': False, 'order_time': '2026-10-01 09:00', 'status': '已签收', 'ship_time': '2026-10-02 10:00', 'sign_time': '2026-10-04 14:00', 'carrier': '远航快递', 'tracking_no': 'ZT26100101188', 'trace': [['2026-10-02 10:00', '商家已发货，快递员已揽收'], ['2026-10-02 23:30', '快件已到达【转运中心】'], ['2026-10-04 14:00', '快件已签收，签收人：本人。感谢使用远航快递（深圳市）']], 'receiver': {'name': '周先生', 'phone': '188****0912', 'address': '深圳市宝安区新安街道创业二路8号'}, 'aftersale': None},
+    'QY20261023012': {'order_id': 'QY20261023012', 'buyer_id': 'U1006', 'shop': '清屿官方旗舰店', 'brand': '清屿', 'item': '清屿 家清囤货礼盒', 'qty': 1, 'amount': 259.0, 'gift': None, 'cold_chain': False, 'freight_insurance': False, 'order_time': '2026-10-23 10:00', 'status': '已发货', 'ship_time': '2026-10-23 18:00', 'sign_time': None, 'carrier': '远航快递', 'tracking_no': 'ZT78012345612', 'trace': [['2026-10-23 18:00', '商家已发货，快递员已揽收【广州白云仓】'], ['2026-10-23 23:40', '快件已到达【广州转运中心】']], 'receiver': {'name': '周先生', 'phone': '188****0912', 'address': '深圳市宝安区新安街道创业二路8号'}, 'aftersale': None},
+    'QY20261017013': {'order_id': 'QY20261017013', 'buyer_id': 'U1007', 'shop': '清屿官方旗舰店', 'brand': '清屿', 'item': '清屿 香氛洗衣液 3kg×2', 'qty': 1, 'amount': 89.0, 'gift': None, 'cold_chain': False, 'freight_insurance': False, 'order_time': '2026-10-17 15:00', 'status': '售后中', 'ship_time': '2026-10-18 10:00', 'sign_time': '2026-10-20 13:00', 'carrier': '远航快递', 'tracking_no': 'ZT26101701388', 'trace': [['2026-10-18 10:00', '商家已发货，快递员已揽收'], ['2026-10-18 23:30', '快件已到达【转运中心】'], ['2026-10-20 13:00', '快件已签收，签收人：本人。感谢使用远航快递（东莞市）']], 'receiver': {'name': '吴女士', 'phone': '186****3365', 'address': '东莞市南城区鸿福路106号'}, 'aftersale': {'type': '无理由退货', 'apply_time': '2026-10-24 10:00', 'progress': '买家已寄回，等待仓库验收', 'next': '仓库收货后 48 小时内完成审核，审核通过后原路退款'}},
+    'QY20261020014': {'order_id': 'QY20261020014', 'buyer_id': 'U1007', 'shop': '清屿官方旗舰店', 'brand': '清屿', 'item': '清屿 柔顺剂 2L', 'qty': 1, 'amount': 49.9, 'gift': '赠品：清屿 旅行装柔顺剂 100ml', 'cold_chain': False, 'freight_insurance': False, 'order_time': '2026-10-20 19:00', 'status': '已签收', 'ship_time': '2026-10-21 10:00', 'sign_time': '2026-10-23 19:00', 'carrier': '远航快递', 'tracking_no': 'ZT26102001488', 'trace': [['2026-10-21 10:00', '商家已发货，快递员已揽收'], ['2026-10-21 23:30', '快件已到达【转运中心】'], ['2026-10-23 19:00', '快件已签收，签收人：本人。感谢使用远航快递（东莞市）']], 'receiver': {'name': '吴女士', 'phone': '186****3365', 'address': '东莞市南城区鸿福路106号'}, 'aftersale': None},
+    'QY20261024015': {'order_id': 'QY20261024015', 'buyer_id': 'U1008', 'shop': '清屿官方旗舰店', 'brand': '清屿', 'item': '清屿 洗衣凝珠 52颗', 'qty': 1, 'amount': 59.9, 'gift': None, 'cold_chain': False, 'freight_insurance': False, 'order_time': '2026-10-24 22:00', 'status': '待发货', 'ship_time': None, 'sign_time': None, 'carrier': None, 'tracking_no': None, 'trace': [], 'receiver': {'name': '郑先生', 'phone': '158****6610', 'address': '广州市番禺区市桥街道光明北路1号'}, 'aftersale': None},
+    'QY20261026029': {'order_id': 'QY20261026029', 'buyer_id': 'U1009', 'shop': '清屿官方旗舰店', 'brand': '清屿', 'item': '清屿 厨房重油污清洁喷雾 500ml×3', 'qty': 1, 'amount': 45.0, 'gift': None, 'cold_chain': False, 'freight_insurance': False, 'order_time': '2026-10-26 09:00', 'status': '待发货', 'ship_time': None, 'sign_time': None, 'carrier': None, 'tracking_no': None, 'trace': [], 'receiver': {'name': '孙女士', 'phone': '159****2287', 'address': '广州市海珠区新港中路397号'}, 'aftersale': None},
+    'YY20261025016': {'order_id': 'YY20261025016', 'buyer_id': 'U1001', 'shop': '元养官方旗舰店', 'brand': '元养', 'item': '元养 深海鱼油软胶囊 120粒', 'qty': 1, 'amount': 168.0, 'gift': None, 'cold_chain': False, 'freight_insurance': False, 'order_time': '2026-10-25 15:00', 'status': '待发货', 'ship_time': None, 'sign_time': None, 'carrier': None, 'tracking_no': None, 'trace': [], 'receiver': {'name': '林小姐', 'phone': '138****2201', 'address': '广州市天河区天河北路233号云峰广场'}, 'aftersale': None},
+    'YY20261021017': {'order_id': 'YY20261021017', 'buyer_id': 'U1002', 'shop': '元养官方旗舰店', 'brand': '元养', 'item': '元养 冷藏益生菌 30条（需冷藏）', 'qty': 1, 'amount': 199.0, 'gift': None, 'cold_chain': True, 'freight_insurance': False, 'order_time': '2026-10-21 10:00', 'status': '已签收', 'ship_time': '2026-10-22 09:00', 'sign_time': '2026-10-23 13:00', 'carrier': '青鸟冷运', 'tracking_no': 'QN26102101788', 'trace': [['2026-10-22 09:00', '商家已发货，快递员已揽收'], ['2026-10-22 23:30', '快件已到达【转运中心】'], ['2026-10-23 13:00', '快件已签收，签收人：本人。感谢使用青鸟冷运（广州市）']], 'receiver': {'name': '陈先生', 'phone': '139****5512', 'address': '广州市天河区体育西路111号星汇中心'}, 'aftersale': None},
+    'YY20261019018': {'order_id': 'YY20261019018', 'buyer_id': 'U1003', 'shop': '元养官方旗舰店', 'brand': '元养', 'item': '元养 深海鱼油软胶囊 120粒', 'qty': 1, 'amount': 168.0, 'gift': None, 'cold_chain': False, 'freight_insurance': False, 'order_time': '2026-10-19 09:00', 'status': '已签收', 'ship_time': '2026-10-20 10:00', 'sign_time': '2026-10-22 16:00', 'carrier': '青鸟速运', 'tracking_no': 'QN26101901888', 'trace': [['2026-10-20 10:00', '商家已发货，快递员已揽收'], ['2026-10-20 23:30', '快件已到达【转运中心】'], ['2026-10-22 16:00', '快件已签收，签收人：本人。感谢使用青鸟速运（广州市）']], 'receiver': {'name': '王女士', 'phone': '137****8823', 'address': '广州市越秀区环市东路339号'}, 'aftersale': None},
+    'YY20261015019': {'order_id': 'YY20261015019', 'buyer_id': 'U1003', 'shop': '元养官方旗舰店', 'brand': '元养', 'item': '元养 深海鱼油年度囤货装 120粒×3', 'qty': 1, 'amount': 459.0, 'gift': None, 'cold_chain': False, 'freight_insurance': False, 'order_time': '2026-10-15 20:00', 'status': '已签收', 'ship_time': '2026-10-16 10:00', 'sign_time': '2026-10-20 11:00', 'carrier': '青鸟速运', 'tracking_no': 'QN26101501988', 'trace': [['2026-10-16 10:00', '商家已发货，快递员已揽收'], ['2026-10-16 23:30', '快件已到达【转运中心】'], ['2026-10-20 11:00', '快件已签收，签收人：本人。感谢使用青鸟速运（广州市）']], 'receiver': {'name': '王女士', 'phone': '137****8823', 'address': '广州市越秀区环市东路339号'}, 'aftersale': None},
+    'YY20261010020': {'order_id': 'YY20261010020', 'buyer_id': 'U1004', 'shop': '元养官方旗舰店', 'brand': '元养', 'item': '元养 复合维生素片 90片', 'qty': 1, 'amount': 99.0, 'gift': None, 'cold_chain': False, 'freight_insurance': False, 'order_time': '2026-10-10 10:00', 'status': '已签收', 'ship_time': '2026-10-11 10:00', 'sign_time': '2026-10-13 15:00', 'carrier': '青鸟速运', 'tracking_no': 'QN26101002088', 'trace': [['2026-10-11 10:00', '商家已发货，快递员已揽收'], ['2026-10-11 23:30', '快件已到达【转运中心】'], ['2026-10-13 15:00', '快件已签收，签收人：本人。感谢使用青鸟速运（深圳市）']], 'receiver': {'name': '赵先生', 'phone': '136****4410', 'address': '深圳市福田区福华三路88号'}, 'aftersale': None},
+    'YY20261001021': {'order_id': 'YY20261001021', 'buyer_id': 'U1004', 'shop': '元养官方旗舰店', 'brand': '元养', 'item': '元养 叶黄素酯软糖 60粒', 'qty': 1, 'amount': 129.0, 'gift': None, 'cold_chain': False, 'freight_insurance': False, 'order_time': '2026-10-01 10:00', 'status': '已签收', 'ship_time': '2026-10-01 18:00', 'sign_time': '2026-10-03 12:00', 'carrier': '青鸟速运', 'tracking_no': 'QN26100102188', 'trace': [['2026-10-01 18:00', '商家已发货，快递员已揽收'], ['2026-10-01 23:30', '快件已到达【转运中心】'], ['2026-10-03 12:00', '快件已签收，签收人：本人。感谢使用青鸟速运（深圳市）']], 'receiver': {'name': '赵先生', 'phone': '136****4410', 'address': '深圳市福田区福华三路88号'}, 'aftersale': None},
+    'YY20260915022': {'order_id': 'YY20260915022', 'buyer_id': 'U1005', 'shop': '元养官方旗舰店', 'brand': '元养', 'item': '元养 深海鱼油软胶囊 120粒', 'qty': 1, 'amount': 168.0, 'gift': None, 'cold_chain': False, 'freight_insurance': False, 'order_time': '2026-09-15 10:00', 'status': '已签收', 'ship_time': '2026-09-16 10:00', 'sign_time': '2026-09-18 12:00', 'carrier': '青鸟速运', 'tracking_no': 'QN26091502288', 'trace': [['2026-09-16 10:00', '商家已发货，快递员已揽收'], ['2026-09-16 23:30', '快件已到达【转运中心】'], ['2026-09-18 12:00', '快件已签收，签收人：本人。感谢使用青鸟速运（佛山市）']], 'receiver': {'name': '黄女士', 'phone': '135****7731', 'address': '佛山市顺德区大良街道德民路12号'}, 'aftersale': None},
+    'YY20261022023': {'order_id': 'YY20261022023', 'buyer_id': 'U1005', 'shop': '元养官方旗舰店', 'brand': '元养', 'item': '元养 冷藏益生菌 30条（需冷藏）', 'qty': 1, 'amount': 199.0, 'gift': None, 'cold_chain': True, 'freight_insurance': False, 'order_time': '2026-10-22 22:00', 'status': '已发货', 'ship_time': '2026-10-23 17:00', 'sign_time': None, 'carrier': '青鸟冷运', 'tracking_no': 'QN1409876543210', 'trace': [['2026-10-23 17:00', '商家已发货，青鸟冷运已揽收【杭州冷链仓】'], ['2026-10-24 06:00', '快件已到达【杭州冷链转运中心】'], ['2026-10-25 21:30', '快件已到达【广州冷链分拨中心】'], ['2026-10-26 10:40', '快件已到达【佛山顺德大良营业点】，预计今日派送']], 'receiver': {'name': '黄女士', 'phone': '135****7731', 'address': '佛山市顺德区大良街道德民路12号'}, 'aftersale': None},
+    'YY20261024024': {'order_id': 'YY20261024024', 'buyer_id': 'U1006', 'shop': '元养官方旗舰店', 'brand': '元养', 'item': '元养 复合维生素片 90片', 'qty': 1, 'amount': 99.0, 'gift': None, 'cold_chain': False, 'freight_insurance': False, 'order_time': '2026-10-24 18:00', 'status': '待发货', 'ship_time': None, 'sign_time': None, 'carrier': None, 'tracking_no': None, 'trace': [], 'receiver': {'name': '周先生', 'phone': '188****0912', 'address': '深圳市宝安区新安街道创业二路8号'}, 'aftersale': None},
+    'YY20261023025': {'order_id': 'YY20261023025', 'buyer_id': 'U1006', 'shop': '元养官方旗舰店', 'brand': '元养', 'item': '元养 叶黄素酯软糖 60粒', 'qty': 1, 'amount': 129.0, 'gift': None, 'cold_chain': False, 'freight_insurance': False, 'order_time': '2026-10-23 12:00', 'status': '已发货', 'ship_time': '2026-10-24 10:00', 'sign_time': None, 'carrier': '长风快递', 'tracking_no': 'CF4312987650', 'trace': [['2026-10-24 10:00', '商家已发货，快递员已揽收【杭州仓】'], ['2026-10-25 04:20', '快件已到达【深圳转运中心】'], ['2026-10-26 07:50', '快件已到达【深圳宝安新安营业部】，正在安排派送']], 'receiver': {'name': '周先生', 'phone': '188****0912', 'address': '深圳市宝安区新安街道创业二路8号'}, 'aftersale': None},
+    'YY20261020026': {'order_id': 'YY20261020026', 'buyer_id': 'U1007', 'shop': '元养官方旗舰店', 'brand': '元养', 'item': '元养 深海鱼油软胶囊 120粒', 'qty': 1, 'amount': 168.0, 'gift': None, 'cold_chain': False, 'freight_insurance': False, 'order_time': '2026-10-20 10:00', 'status': '已签收', 'ship_time': '2026-10-23 10:00', 'sign_time': '2026-10-25 09:30', 'carrier': '青鸟速运', 'tracking_no': 'QN26102002688', 'trace': [['2026-10-23 10:00', '商家已发货，快递员已揽收'], ['2026-10-23 23:30', '快件已到达【转运中心】'], ['2026-10-25 09:30', '快件已签收，签收人：本人。感谢使用青鸟速运（东莞市）']], 'receiver': {'name': '吴女士', 'phone': '186****3365', 'address': '东莞市南城区鸿福路106号'}, 'aftersale': None},
+    'YY20261012027': {'order_id': 'YY20261012027', 'buyer_id': 'U1008', 'shop': '元养官方旗舰店', 'brand': '元养', 'item': '元养 冷藏益生菌 30条（需冷藏）', 'qty': 1, 'amount': 199.0, 'gift': None, 'cold_chain': True, 'freight_insurance': False, 'order_time': '2026-10-12 10:00', 'status': '已签收', 'ship_time': '2026-10-13 10:00', 'sign_time': '2026-10-15 12:00', 'carrier': '青鸟冷运', 'tracking_no': 'QN26101202788', 'trace': [['2026-10-13 10:00', '商家已发货，快递员已揽收'], ['2026-10-13 23:30', '快件已到达【转运中心】'], ['2026-10-15 12:00', '快件已签收，签收人：本人。感谢使用青鸟冷运（广州市）']], 'receiver': {'name': '郑先生', 'phone': '158****6610', 'address': '广州市番禺区市桥街道光明北路1号'}, 'aftersale': None},
+    'YY20261018028': {'order_id': 'YY20261018028', 'buyer_id': 'U1009', 'shop': '元养官方旗舰店', 'brand': '元养', 'item': '元养 复合维生素片 90片', 'qty': 1, 'amount': 99.0, 'gift': None, 'cold_chain': False, 'freight_insurance': False, 'order_time': '2026-10-18 10:00', 'status': '售后中', 'ship_time': '2026-10-19 10:00', 'sign_time': '2026-10-21 12:00', 'carrier': '青鸟速运', 'tracking_no': 'QN26101802888', 'trace': [['2026-10-19 10:00', '商家已发货，快递员已揽收'], ['2026-10-19 23:30', '快件已到达【转运中心】'], ['2026-10-21 12:00', '快件已签收，签收人：本人。感谢使用青鸟速运（广州市）']], 'receiver': {'name': '孙女士', 'phone': '159****2287', 'address': '广州市海珠区新港中路397号'}, 'aftersale': {'type': '质量问题退款', 'apply_time': '2026-10-25 16:00', 'progress': '等待商家审核', 'next': '商家会在 24 小时内完成审核'}},
+    'YY20261008030': {'order_id': 'YY20261008030', 'buyer_id': 'U1010', 'shop': '元养官方旗舰店', 'brand': '元养', 'item': '元养 深海鱼油年度囤货装 120粒×3', 'qty': 1, 'amount': 459.0, 'gift': None, 'cold_chain': False, 'freight_insurance': False, 'order_time': '2026-10-08 10:00', 'status': '已签收', 'ship_time': '2026-10-09 10:00', 'sign_time': '2026-10-11 12:00', 'carrier': '青鸟速运', 'tracking_no': 'QN26100803088', 'trace': [['2026-10-09 10:00', '商家已发货，快递员已揽收'], ['2026-10-09 23:30', '快件已到达【转运中心】'], ['2026-10-11 12:00', '快件已签收，签收人：本人。感谢使用青鸟速运（杭州市）']], 'receiver': {'name': '何先生', 'phone': '177****5098', 'address': '杭州市西湖区文三路90号'}, 'aftersale': None},
+}
+
+# ---- 公共函数 ----
+def _t(s):
+    return datetime.strptime(s, "%Y-%m-%d %H:%M") if s else None
+
+
+NOW = _t(DEMO_NOW)
+
+
+def _fmt(dt):
+    return dt.strftime("%m月%d日 %H:%M")
+
+
+def _find(order_id, buyer_id, shop):
+    """按 订单号 + 买家ID + 店铺 查订单。三者对不上一律当作"没查到"，不泄露别人的订单是否存在。"""
+    oid = (order_id or "").strip().upper()
+    if not oid:
+        return None, "NO_ORDER_ID"
+    o = ORDERS.get(oid)
+    if (not o) or o["buyer_id"] != (buyer_id or "").strip() or o["shop"] != (shop or "").strip():
+        return None, "ORDER_NOT_FOUND"
+    return o, None
+
+
+def _ticket(order_id, ticket_type):
+    """生成演示用工单号（同一订单同一类型得到同一个号，方便复现）。"""
+    s = (order_id or "NA") + ticket_type
+    h = 0
+    for ch in s:
+        h = (h * 31 + ord(ch)) % 1000000
+    return "TK" + NOW.strftime("%m%d") + str(h).zfill(6)
+
+
+# ---- 本节点逻辑 ----
+ADDR_OK = re.compile(r"路|街|道|号|村|巷|弄|大厦|小区|栋|楼|镇")
+
+
+def main(order_id: str, buyer_id: str, shop: str, new_address: str) -> dict:
+    na = (new_address or "").strip()
+    o, err = _find(order_id, buyer_id, shop)
+    if err == "NO_ORDER_ID":
+        return {"answer": "好的，麻烦先发一下要改地址的订单号（以 QY 或 YY 开头）～", "pending_action": ""}
+    if err:
+        return {"answer": "亲，本店没有查到这个订单号，麻烦核对一下哦。", "pending_action": ""}
+    oid = o["order_id"]
+    if o["status"] != "待发货":
+        ans = ("订单 " + oid + " 当前状态是「" + o["status"] + "」，已经发出的订单系统没法再改地址。您可以等快递员联系时直接沟通改派，"
+               "或者回复「转人工」，我帮您联系快递拦截改址。")
+        return {"answer": ans, "pending_action": ""}
+    if len(na) < 8 or not ADDR_OK.search(na):
+        return {"answer": "好的，请发一下完整的新地址（省市区 + 街道门牌号），我帮订单 " + oid + " 修改～", "pending_action": ""}
+    r = o["receiver"]
+    pending = json.dumps({"action": "modify_address", "order_id": oid, "new_address": na}, ensure_ascii=False)
+    ans = ("请确认把订单 " + oid + " 的收货地址修改为：\n" + na + "\n（收件人 " + r["name"] + "、电话 " + r["phone"] +
+           " 不变）\n回复「确认」后马上为您修改，回复「算了」则不修改。")
+    return {"answer": ans, "pending_action": pending}
