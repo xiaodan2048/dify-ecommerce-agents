@@ -1,0 +1,501 @@
+<title>内容Agent节点图解</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* 版式：上方复刻 Dify 画布（点阵底、白色节点卡），下方按节点顺序逐个讲解；代码节点蓝、模型节点紫，和 Dify 里的图标颜色一致 */
+:root{
+  --bg:#f6f7f9; --canvas:#eef0f4; --dot:#cfd4dc; --card:#ffffff; --line:#d6dae1;
+  --fg:#1d2433; --muted:#5b6475; --faint:#8a92a3;
+  --code:#2a62e8; --code-soft:#e7eefd;
+  --llm:#6a3ee8; --llm-soft:#efe9fd;
+  --io:#e2781b; --io-soft:#fdf0e3;
+  --ok:#1f8a5b; --ok-soft:#e3f4ec; --warn:#b4540f; --warn-soft:#fbeee2; --bad:#c23a3a; --bad-soft:#fbe8e8;
+  --mono-bg:#f3f4f7;
+  --f-display:"Noto Serif SC","Songti SC",serif; --f-body:"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif; --f-mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#14171d; --canvas:#1a1e26; --dot:#2c323d; --card:#20252f; --line:#333a47;
+  --fg:#e7eaf0; --muted:#a3abba; --faint:#7d8696;
+  --code:#7aa2ff; --code-soft:#1f2b46; --llm:#a98bff; --llm-soft:#2a2245; --io:#f3a25a; --io-soft:#3a2b1c;
+  --ok:#5fcf9a; --ok-soft:#18362a; --warn:#f0a660; --warn-soft:#3a2a1a; --bad:#f08a8a; --bad-soft:#3d2020;
+  --mono-bg:#1a1e26; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#14171d; --canvas:#1a1e26; --dot:#2c323d; --card:#20252f; --line:#333a47;
+  --fg:#e7eaf0; --muted:#a3abba; --faint:#7d8696;
+  --code:#7aa2ff; --code-soft:#1f2b46; --llm:#a98bff; --llm-soft:#2a2245; --io:#f3a25a; --io-soft:#3a2b1c;
+  --ok:#5fcf9a; --ok-soft:#18362a; --warn:#f0a660; --warn-soft:#3a2a1a; --bad:#f08a8a; --bad-soft:#3d2020;
+  --mono-bg:#1a1e26; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:15px;line-height:1.7}
+.wrap{max-width:1180px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:28px 64px}
+h1,h2,h3{font-family:var(--f-display);text-wrap:balance;margin:0}
+h1{font-size:clamp(26px,4vw,36px);line-height:1.25}
+h2{font-size:22px;line-height:1.35}
+h3{font-size:16px;font-family:var(--f-body);font-weight:700}
+p{margin:0}
+.lede{color:var(--muted);max-width:68ch;margin-top:10px}
+.legend{display:flex;flex-wrap:wrap;gap:8px 16px;margin-top:16px;font-size:13px;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.sw{width:18px;height:18px;border-radius:5px;display:inline-grid;place-items:center;color:#fff;font-size:11px;font-weight:700}
+.sw.code{background:var(--code)} .sw.llm{background:var(--llm)} .sw.io{background:var(--io)}
+.case{margin-top:18px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 16px;display:grid;gap:4px;font-size:14px}
+.case b{font-weight:700}
+.case .k{color:var(--faint);font-size:12px;letter-spacing:.04em}
+
+/* ---------- 画布 ---------- */
+.canvas-box{margin-top:22px;border:1px solid var(--line);border-radius:12px;background-color:var(--canvas);background-image:radial-gradient(var(--dot) 1px,transparent 1px);background-size:16px 16px;overflow-x:auto;-webkit-overflow-scrolling:touch}
+.canvas-head{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 14px;border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--card) 80%,transparent);font-size:12px;color:var(--muted);position:sticky;left:0}
+.flow{display:flex;align-items:center;gap:0;padding:26px 20px 30px;width:max-content}
+.node{all:unset;cursor:pointer;width:150px;background:var(--card);border:1.5px solid var(--line);border-radius:12px;padding:10px 11px 11px;display:grid;gap:6px;box-shadow:0 1px 2px rgba(16,24,40,.06);transition:border-color .15s,box-shadow .15s,transform .15s}
+.node:hover{border-color:var(--faint)}
+.node:focus-visible{outline:2px solid var(--llm);outline-offset:2px}
+.node[aria-current="true"]{border-color:var(--sel,var(--code));box-shadow:0 0 0 3px color-mix(in srgb,var(--sel,var(--code)) 22%,transparent)}
+.node.llm{--sel:var(--llm)} .node.code{--sel:var(--code)} .node.io{--sel:var(--io)}
+.nt{display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:700;line-height:1.3}
+.ic{flex:none;width:20px;height:20px;border-radius:6px;display:grid;place-items:center;color:#fff;font-size:10px;font-weight:700;font-family:var(--f-mono)}
+.code .ic{background:var(--code)} .llm .ic{background:var(--llm)} .io .ic{background:var(--io)}
+.role{font-size:12px;color:var(--muted);line-height:1.45}
+.meta{display:flex;flex-wrap:wrap;gap:4px}
+.pill{font-size:10.5px;line-height:1;padding:4px 6px;border-radius:999px;background:var(--mono-bg);color:var(--muted);font-family:var(--f-mono);white-space:nowrap}
+.llm .pill.cost{background:var(--llm-soft);color:var(--llm)}
+.edge{width:30px;height:2px;background:var(--line);position:relative;flex:none}
+.edge::after{content:"";position:absolute;right:-1px;top:-4px;border:5px solid transparent;border-left:6px solid var(--line);border-right:0}
+.canvas-foot{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;padding:10px 14px;border-top:1px solid var(--line);font-size:12.5px;color:var(--muted);position:sticky;left:0;background:color-mix(in srgb,var(--card) 80%,transparent)}
+.btns{display:flex;gap:8px}
+.btn{all:unset;cursor:pointer;font-size:13px;padding:6px 12px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--fg)}
+.btn:hover{border-color:var(--faint)} .btn:focus-visible{outline:2px solid var(--code);outline-offset:2px}
+.btn[disabled]{opacity:.4;cursor:default}
+
+/* ---------- 故事条 ---------- */
+.story{margin-top:34px}
+.story ol{list-style:none;padding:0;margin:14px 0 0;display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}
+.story li{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:11px 12px;font-size:13.5px;line-height:1.6;display:grid;gap:4px;align-content:start}
+.story .who{font-size:12px;font-weight:700;display:flex;align-items:center;gap:6px}
+.story .tag{font-size:11px;padding:2px 7px;border-radius:999px;font-weight:700;justify-self:start}
+.tag.ok{background:var(--ok-soft);color:var(--ok)} .tag.warn{background:var(--warn-soft);color:var(--warn)} .tag.bad{background:var(--bad-soft);color:var(--bad)}
+
+/* ---------- 节点详解 ---------- */
+.details{margin-top:40px;display:grid;gap:22px}
+.detail{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px 22px 18px;scroll-margin-top:16px;display:grid;gap:18px;transition:border-color .2s,box-shadow .2s}
+.detail.active{border-color:var(--sel,var(--code));box-shadow:0 0 0 3px color-mix(in srgb,var(--sel,var(--code)) 14%,transparent)}
+.detail.llm{--sel:var(--llm)} .detail.code{--sel:var(--code)} .detail.io{--sel:var(--io)}
+.dh{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px}
+.dh .ic{width:28px;height:28px;font-size:12px;border-radius:8px}
+.kind{font-size:12px;font-weight:700;padding:3px 9px;border-radius:999px}
+.code .kind{background:var(--code-soft);color:var(--code)} .llm .kind{background:var(--llm-soft);color:var(--llm)} .io .kind{background:var(--io-soft);color:var(--io)}
+.dstat{margin-left:auto;font-family:var(--f-mono);font-size:12px;color:var(--muted)}
+.analogy{font-size:16px;max-width:70ch}
+.analogy b{font-weight:700}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.cols>*{min-width:0}
+.box{border:1px solid var(--line);border-radius:10px;padding:14px 15px;display:grid;gap:8px;align-content:start}
+.box h3{font-size:13px;color:var(--muted);letter-spacing:.03em}
+.box ul,.box ol{margin:0;padding-left:1.2em;display:grid;gap:4px}
+.io-in,.io-out{font-size:13.5px}
+.data{font-family:var(--f-mono);font-size:12px;line-height:1.65;background:var(--mono-bg);border-radius:8px;padding:10px 12px;white-space:pre-wrap;word-break:break-word;overflow-x:auto;color:var(--fg)}
+.data .hl{background:var(--warn-soft);color:var(--warn);border-radius:3px;padding:0 2px}
+.data .ok{background:var(--ok-soft);color:var(--ok);border-radius:3px;padding:0 2px}
+.data .del{background:var(--bad-soft);color:var(--bad);text-decoration:line-through;border-radius:3px;padding:0 2px}
+.why{border-left:3px solid var(--sel,var(--code));padding:2px 0 2px 14px;display:grid;gap:6px;font-size:14px}
+.why b{font-weight:700}
+.pit{background:var(--warn-soft);border-radius:10px;padding:12px 14px;font-size:13.5px;display:grid;gap:4px}
+.pit b{color:var(--warn)}
+details.trans{border:1px solid var(--line);border-radius:10px}
+details.trans>summary{cursor:pointer;padding:11px 14px;font-size:13.5px;font-weight:700;list-style:none;display:flex;justify-content:space-between;gap:8px}
+details.trans>summary::-webkit-details-marker{display:none}
+details.trans>summary::after{content:"展开";font-weight:400;color:var(--faint);font-size:12.5px}
+details.trans[open]>summary::after{content:"收起"}
+.tr{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);border-top:1px solid var(--line)}
+.tr>div{padding:10px 14px;min-width:0}
+.tr .c{font-family:var(--f-mono);font-size:12px;line-height:1.6;background:var(--mono-bg);white-space:pre-wrap;word-break:break-word}
+.tr .h{font-size:13.5px}
+.nav{display:flex;justify-content:space-between;gap:10px;font-size:13px}
+.nav a{color:var(--muted);text-decoration:none;border-bottom:1px dashed var(--faint)}
+.nav a:hover{color:var(--fg)}
+
+/* ---------- 总表 ---------- */
+.sum{margin-top:44px}
+.tbl{margin-top:14px;overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:var(--card)}
+table{border-collapse:collapse;width:100%;min-width:720px;font-size:13.5px}
+th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:12px;color:var(--muted);font-weight:700;letter-spacing:.03em;background:var(--mono-bg)}
+tr:last-child td{border-bottom:0}
+td.num{font-family:var(--f-mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:1px}
+.dot.code{background:var(--code)} .dot.llm{background:var(--llm)} .dot.io{background:var(--io)}
+.takeaways{margin-top:18px;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+.takeaways div{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:13px 15px;font-size:14px;display:grid;gap:4px}
+.takeaways b{font-size:15px}
+.foot{margin-top:36px;font-size:12.5px;color:var(--faint)}
+
+@media (max-width:820px){.cols{grid-template-columns:1fr}.tr{grid-template-columns:1fr}.dstat{margin-left:0;width:100%}.detail{padding:18px 16px 16px}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto!important}}
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>内容Agent 画布逐个节点讲清楚</h1>
+    <p class="lede">Dify 里「内容Agent-演示」一共 9 个节点，从左往右一条线走到底。其中 3 个用模型（会写、会判断、花 token），4 个是代码（按规则办事，毫秒级、零成本）。下面用一次真实运行的数据，带你看每一步进来了什么、出去了什么。</p>
+    <div class="legend">
+      <span><i class="sw llm">AI</i>模型节点：像一个会写字的员工，每次写法可能不一样</span>
+      <span><i class="sw code">{ }</i>代码节点：像一张核对表，同样的输入永远同样的结果</span>
+      <span><i class="sw io">▶</i>开始 / 结束</span>
+    </div>
+    <div class="case">
+      <span class="k">本页用的真实例子（10 月 27 日 v1.4 版本的一次运行，生成用例 G08）</span>
+      <span>商品 <b>P03 辅酶Q10软胶囊（保健食品，只批准了「有助于抗氧化」）</b>　·　平台 <b>抖音脚本</b></span>
+      <span>运营补充要求：<b>「目标熬夜加班党，突出抗疲劳，顺便提一下对心脏好」</b>　← 这句要求本身就违规，看它在哪一步被拦下</span>
+    </div>
+  </header>
+
+  <section class="canvas-box" aria-label="Dify 画布复刻">
+    <div class="canvas-head"><span>内容Agent-演示 · 工作流画布（复刻）</span><span>点任意节点看讲解</span></div>
+    <div class="flow" id="flow">
+      <button class="node io" data-id="start"><span class="nt"><i class="ic">▶</i>开始</span><span class="role">运营填表：商品、平台、补充要求</span><span class="meta"><span class="pill">0 ms</span></span></button>
+      <i class="edge"></i>
+      <button class="node code" data-id="a"><span class="nt"><i class="ic">{ }</i>A 商品资料与规则库</span><span class="role">取资料、给每条编号、打包规则</span><span class="meta"><span class="pill">144 ms</span></span></button>
+      <i class="edge"></i>
+      <button class="node llm" data-id="b"><span class="nt"><i class="ic">AI</i>B 商品理解Agent</span><span class="role">提卖点和人群，每条标出处</span><span class="meta"><span class="pill">7.2 s</span><span class="pill cost">2,080 tok</span></span></button>
+      <i class="edge"></i>
+      <button class="node code" data-id="c"><span class="nt"><i class="ic">{ }</i>C 卖点溯源校验</span><span class="role">逐条查出处，没出处就拦</span><span class="meta"><span class="pill">90 ms</span></span></button>
+      <i class="edge"></i>
+      <button class="node llm" data-id="d"><span class="nt"><i class="ic">AI</i>D 内容生成Agent</span><span class="role">按平台写初稿 + 主图需求单</span><span class="meta"><span class="pill">8.8 s</span><span class="pill cost">2,111 tok</span></span></button>
+      <i class="edge"></i>
+      <button class="node code" data-id="e"><span class="nt"><i class="ic">{ }</i>E 合规规则检查</span><span class="role">拿词表扫初稿</span><span class="meta"><span class="pill">78 ms</span></span></button>
+      <i class="edge"></i>
+      <button class="node llm" data-id="f"><span class="nt"><i class="ic">AI</i>F 合规审核Agent</span><span class="role">改掉命中词，再找暗示</span><span class="meta"><span class="pill">43.4 s</span><span class="pill cost">8,978 tok</span></span></button>
+      <i class="edge"></i>
+      <button class="node code" data-id="g"><span class="nt"><i class="ic">{ }</i>G 终稿复检与报告组装</span><span class="role">同一套规则再扫一遍，拼报告</span><span class="meta"><span class="pill">440 ms</span></span></button>
+      <i class="edge"></i>
+      <button class="node io" data-id="end"><span class="nt"><i class="ic">■</i>结束</span><span class="role">输出一份排好版的报告</span><span class="meta"><span class="pill">0 ms</span></span></button>
+    </div>
+    <div class="canvas-foot"><span id="stepLabel">第 1 / 9 步：开始</span><span class="btns"><button class="btn" id="prev" type="button">← 上一步</button><button class="btn" id="next" type="button">下一步 →</button></span></div>
+  </section>
+
+  <section class="story">
+    <h2>先看结论：「抗疲劳、对心脏好」是怎么被一层层拦下的</h2>
+    <ol>
+      <li><span class="who"><i class="sw llm">AI</i>B 商品理解</span><span>卖点里没写抗疲劳、没写心脏，买家说的「没那么累」「胸口舒服」都没当卖点。</span><span class="tag ok">守住了</span></li>
+      <li><span class="who"><i class="sw llm">AI</i>B 商品理解</span><span>但「目标人群」写了「经常熬夜加班的上班族」，依据是那条「熬夜加班吃了精神好」的评价。</span><span class="tag warn">埋了伏笔</span></li>
+      <li><span class="who"><i class="sw code">{ }</i>C 溯源校验</span><span>只检查卖点，不检查人群，这条溜了过去。</span><span class="tag bad">漏了</span></li>
+      <li><span class="who"><i class="sw llm">AI</i>D 内容生成</span><span>没写「对心脏好」，但标题写成「加班党的营养补充」，第一个镜头是「加班到晚上十点」；还漏写了「本品不能代替药物」。</span><span class="tag warn">用场景暗示</span></li>
+      <li><span class="who"><i class="sw code">{ }</i>E 规则检查</span><span>抓到 1 处：缺规定声明。「加班」不是违禁词，规则管不了这层意思。</span><span class="tag warn">抓到一半</span></li>
+      <li><span class="who"><i class="sw llm">AI</i>F 合规审核</span><span>改了 5 处：加班党 → 上班族，删掉「加班到」，删掉和「大胶囊」的比较，补上声明。</span><span class="tag ok">补上了</span></li>
+      <li><span class="who"><i class="sw code">{ }</i>G 终稿复检</span><span>同一套规则再扫一遍，0 命中，标记「可交付设计师精修」。</span><span class="tag ok">放行</span></li>
+    </ol>
+  </section>
+
+  <div class="details" id="details">
+
+    <!-- 开始 -->
+    <article class="detail io" id="n-start" data-id="start">
+      <div class="dh"><i class="ic">▶</i><h2>开始</h2><span class="kind">输入表单</span><span class="dstat">0 ms</span></div>
+      <p class="analogy">像一张<b>需求单</b>：运营告诉内容团队「给哪个商品、写哪个平台、有什么特别要求」。</p>
+      <div class="cols">
+        <div class="box"><h3>表单里有什么</h3><ul>
+          <li><b>商品</b>：下拉选 5 个之一（P01–P05）</li>
+          <li><b>平台</b>：小红书笔记 / 抖音脚本 / 详情页卖点</li>
+          <li><b>运营补充要求</b>：可以不填，用来调侧重点和语气</li>
+        </ul></div>
+        <div class="box"><h3>这次填的</h3><div class="data">商品：P03 辅酶Q10软胶囊（保健食品）
+平台：抖音脚本
+运营补充要求：目标熬夜加班党，<span class="hl">突出抗疲劳</span>，顺便提一下<span class="hl">对心脏好</span></div></div>
+      </div>
+      <div class="why"><b>为什么商品用下拉、不让手填</b><span>商品必须在资料库里存在，后面所有「出处」都要对得上编号。手填容易填错名字，下拉就不会。</span></div>
+      <div class="nav"><span></span><a href="#n-a" data-go="a">下一步：A 商品资料与规则库 →</a></div>
+    </article>
+
+    <!-- A -->
+    <article class="detail code" id="n-a" data-id="a">
+      <div class="dh"><i class="ic">{ }</i><h2>A 商品资料与规则库</h2><span class="kind">代码节点</span><span class="dstat">144 ms · 0 token</span></div>
+      <p class="analogy">像<b>资料员</b>：从档案柜里把这个商品的资料抽出来，每一条都贴上编号；顺手把法务的违禁词表复印一份，给后面三个检查环节用。</p>
+      <div class="cols">
+        <div class="box"><h3>它做的两件事</h3><ol>
+          <li>按商品编号取出<b>资质、批准功效、参数、买家评价</b>，参数编成「P03-参1、参2…」，评价编成「P03-评1、评2…」。后面所有卖点都要引用这些编号。</li>
+          <li>把<b>合规规则库</b>打包输出：极限词、医疗用语、功效词（每个词属于哪类功效）、批准功效、竞品对比、普通食品不能自称保健品、法定声明。</li>
+        </ol></div>
+        <div class="box"><h3>这次交给模型的资料（节选）</h3><div class="data">资质类型：保健食品
+批准功效：<span class="ok">有助于抗氧化</span>
+P03-参1：每粒含辅酶Q10 50mg
+P03-参2：规格：0.5g×60粒，每日1粒，随餐吞服
+P03-参3：软胶囊，粒径小，易吞咽
+…
+P03-评3：最近经常熬夜加班，吃了感觉精神好一些，<span class="hl">没那么累了</span>
+P03-评4：我爸<span class="hl">心脏不太好</span>，吃了之后说胸口舒服多了
+…</div></div>
+      </div>
+      <details class="trans"><summary>代码翻译成人话</summary>
+        <div class="tr"><div class="c">PRODUCTS = {
+  "P03": {"名称": "元养 辅酶Q10软胶囊",
+          "批准功效": ["有助于抗氧化"],
+          "参数": [...], "评价": [...]}}</div><div class="h">商品资料库。就是一张表，5 个商品各一行。全部是虚构数据。</div></div>
+        <div class="tr"><div class="c">RULES = {
+  "极限词": ["最好", "第一", "顶级", ...],
+  "功效词": {"缓解体力疲劳": ["抗疲劳", "精力充沛", "没那么累", ...], ...},
+  "保健食品声明": "本品不能代替药物"}</div><div class="h">法务的词表。真实业务里由法务维护，改词只改这里，C、E、G 三个节点自动用新词表。</div></div>
+        <div class="tr"><div class="c">for i, t in enumerate(p["参数"], 1):
+    lines.append(f"{pid}-参{i}：{t}")</div><div class="h">给每条参数挨个编号：第 1 条叫 P03-参1，第 2 条叫 P03-参2……评价同理。</div></div>
+        <div class="tr"><div class="c">return {"dossier": ..., "product_json": ...,
+        "rules_json": ...}</div><div class="h">交出三样东西：给模型读的资料（文字版）、给代码核对用的资料（表格版）、规则库。</div></div>
+      </details>
+      <div class="why"><b>为什么用代码不用模型</b><span>取资料、编号这种事没有任何需要「判断」的地方，用代码 0.1 秒、0 成本、永远不会取错。</span></div>
+      <div class="nav"><a href="#n-start" data-go="start">← 开始</a><a href="#n-b" data-go="b">下一步：B 商品理解Agent →</a></div>
+    </article>
+
+    <!-- B -->
+    <article class="detail llm" id="n-b" data-id="b">
+      <div class="dh"><i class="ic">AI</i><h2>B 商品理解Agent</h2><span class="kind">模型节点 · DeepSeek v4-flash · 温度 0.2</span><span class="dstat">7.2 s · 2,080 token</span></div>
+      <p class="analogy">像<b>商品研究员</b>：读完资料，列出「这个商品值得说的点」和「卖给谁」，而且每一条都要写清楚是从资料哪一条看来的。</p>
+      <div class="cols">
+        <div class="box"><h3>提示词里定的规矩（翻译）</h3><ul>
+          <li>只能用资料里的参数和买家原话，不许补常识、产地、排名</li>
+          <li>每条卖点标 1–3 个编号，编号照抄</li>
+          <li>只能宣称「批准功效」；买家说的身体变化（感冒少了、精神好了、心脏舒服）<b>不能当卖点</b></li>
+          <li>不写极限词，不和别的品牌比</li>
+          <li>只输出一段固定格式的数据（JSON），不写解释</li>
+        </ul></div>
+        <div class="box"><h3>这次的输出</h3><div class="data">卖点（7 条）
+1 每粒含辅酶Q10 50mg，含量标得清楚　[参1]
+2 批准的保健功能是有助于抗氧化　　　[参4]
+3 软胶囊个头小，一口就能吞下去　　　[参3 评1]
+4 吃着没有怪味，打嗝也没味道　　　　[评2]
+5 一天一粒随餐吞服，不容易忘　　　　[参2 评6]
+6 瓶盖有防伪码，扫码能查批次　　　　[参6 评5]
+7 包装简洁，送长辈也拿得出手　　　　[评7]
+人群（3 条）
+· <span class="hl">经常熬夜加班的上班族</span>　　　　　[评3]
+· 给爸妈长辈挑日常营养的人　　　　 [评4 评7]
+· 怕吞大胶囊、在意有没有怪味的人　 [评1 评2]</div></div>
+      </div>
+      <div class="pit"><b>这一步埋的伏笔</b><span>卖点守住了：评3 的「没那么累」、评4 的「心脏」都没写成卖点。但人群那一栏引用了评3，写成「经常熬夜加班的上班族」。人群本身不违规，可它把「加班」这个场景带进了下一步。</span></div>
+      <div class="why"><b>为什么温度定得低（0.2）</b><span>这一步要的是准，不是文采。温度越低，模型越老实地照着资料说。</span></div>
+      <div class="nav"><a href="#n-a" data-go="a">← A 商品资料与规则库</a><a href="#n-c" data-go="c">下一步：C 卖点溯源校验 →</a></div>
+    </article>
+
+    <!-- C -->
+    <article class="detail code" id="n-c" data-id="c">
+      <div class="dh"><i class="ic">{ }</i><h2>C 卖点溯源校验</h2><span class="kind">代码节点</span><span class="dstat">90 ms · 0 token</span></div>
+      <p class="analogy">像<b>核对员</b>：拿着研究员交来的清单，一条一条翻资料，对不上的直接划掉。只有过了这一关的卖点，才会交给写文案的人。</p>
+      <div class="cols">
+        <div class="box"><h3>逐条检查的四个问题</h3><ol>
+          <li>写了出处吗？没写 → 拦</li>
+          <li>出处编号在资料里真的存在吗？比如资料只有参1–参6，却写了参9 → 拦</li>
+          <li>卖点里有没有<b>没批准的功效词</b>？比如蛋白粉写「抵抗力 up」→ 拦</li>
+          <li>有没有医疗用语？比如「护心」→ 拦</li>
+        </ol></div>
+        <div class="box"><h3>这次的结果</h3><div class="data">商品理解Agent共提炼 7 条卖点
+<span class="ok">采用 7 条，拦截 0 条</span>
+
+交给下一步的只有这 7 条卖点 + 3 条人群</div></div>
+      </div>
+      <details class="trans"><summary>代码翻译成人话</summary>
+        <div class="tr"><div class="c">agent_text = re.sub(r"&lt;think&gt;…&lt;/think&gt;", "", agent_text)
+data = _parse(agent_text)</div><div class="h">先把模型的「思考过程」去掉，再把它写的那段数据读成表格。v1.3 换 DeepSeek 时，思考过程混进正文，就是在这里兜底的。</div></div>
+        <div class="tr"><div class="c">if not refs:
+    reason = "没有标依据"</div><div class="h">没写出处 → 记下拦截原因。</div></div>
+        <div class="tr"><div class="c">bad = [r for r in refs if r not in source]</div><div class="h">写了出处，但资料里没有这个编号 → 编的，拦。</div></div>
+        <div class="tr"><div class="c">eh = _effect_hits(point, rules, approved_cats)</div><div class="h">拿规则库里的功效词去卖点里找，找到「没批准的那一类」就拦。批准过的（这里是抗氧化）放过。</div></div>
+        <div class="tr"><div class="c">if reason: dropped.append(...)
+else:      kept.append(...)</div><div class="h">分成两堆：采用 / 拦截。两堆都写进「卖点溯源表」，最后放在报告里给人看。</div></div>
+      </details>
+      <div class="pit"><b>测试里发现的漏洞</b><span>它只查卖点，<b>不查人群</b>。所以「经常熬夜加班的上班族」原样流到了下一步。下一版可以让人群也过一遍功效词检查。</span></div>
+      <div class="why"><b>为什么要有这一步</b><span>这是「从源头拦住编造功效」：卖点在写文案之前就过滤掉，后面写得再好也写不出资料里没有的东西。在评测里，它对「无出处、编号不存在、借买家之口宣称功效」三类情况全部拦住（功能用例 F01–F03）。</span></div>
+      <div class="nav"><a href="#n-b" data-go="b">← B 商品理解Agent</a><a href="#n-d" data-go="d">下一步：D 内容生成Agent →</a></div>
+    </article>
+
+    <!-- D -->
+    <article class="detail llm" id="n-d" data-id="d">
+      <div class="dh"><i class="ic">AI</i><h2>D 内容生成Agent</h2><span class="kind">模型节点 · DeepSeek v4-flash · 温度 0.7</span><span class="dstat">8.8 s · 2,111 token</span></div>
+      <p class="analogy">像<b>文案</b>：只拿到核对员放行的卖点清单，按平台的写法写成稿子，再附一张给设计师的主图需求单。</p>
+      <div class="cols">
+        <div class="box"><h3>提示词里定的规矩（翻译）</h3><ul>
+          <li>只能用「已核验卖点」，清单外的功效、数据、背书都不写</li>
+          <li>不写极限词，不比较，不贬低别人</li>
+          <li>不暗示功效；保健食品只能用批准原文</li>
+          <li>运营要求和规则冲突时<b>以规则为准</b>，谐音、emoji、场景也不能绕</li>
+          <li>抖音脚本：30 秒、5–7 个镜头、前 3 秒有钩子；最后附 3 张主图需求</li>
+        </ul></div>
+        <div class="box"><h3>这次的初稿（节选）</h3><div class="data">【标题】<span class="hl">加班党</span>的营养补充，一天一粒
+镜头1｜夜晚工位，键盘、外卖杯、台灯
+　　口播：<span class="hl">加班到</span>晚上十点，今天那粒营养补充，你吃了吗？
+镜头3｜口播：软胶囊个头小……<span class="hl">怕吞大胶囊的人</span>也能轻松一点
+镜头5｜口播：它批准的保健功能是——有助于抗氧化
+　　　　（<span class="hl">没写「本品不能代替药物」</span>）
+主图1｜每粒50mg</div></div>
+      </div>
+      <div class="pit"><b>这一步发生了什么</b><span>「抗疲劳」「对心脏好」都没写，规矩起作用了。但它顺着上一步的人群，用「加班党」「加班到晚上十点」来贴近运营要求，等于用场景暗示「吃了不累」。另外 6 篇保健食品初稿全部漏写了规定声明，这是评测里发现的固定问题。</span></div>
+      <div class="why"><b>为什么温度比 B 高（0.7）</b><span>这一步要文采和变化，温度高一点，写出来不那么像模板。代价是更容易「发挥」，所以后面要有两道合规关卡。</span></div>
+      <div class="nav"><a href="#n-c" data-go="c">← C 卖点溯源校验</a><a href="#n-e" data-go="e">下一步：E 合规规则检查 →</a></div>
+    </article>
+
+    <!-- E -->
+    <article class="detail code" id="n-e" data-id="e">
+      <div class="dh"><i class="ic">{ }</i><h2>E 合规规则检查</h2><span class="kind">代码节点</span><span class="dstat">78 ms · 0 token</span></div>
+      <p class="analogy">像<b>违禁词扫描仪</b>：拿法务的词表把初稿从头扫一遍，命中哪个词、在哪句话里，全部列出来。它只认字，不懂意思。</p>
+      <div class="cols">
+        <div class="box"><h3>按顺序扫这几类</h3><ol>
+          <li>先把法定警示语剔掉（里面有「治疗」二字，不剔会误抓）</li>
+          <li>广告法极限词：最好、第一、顶级、100%……</li>
+          <li>医疗用语：治疗、降血压、护心、心血管……</li>
+          <li>超出批准功效的功效词：这个商品只批了抗氧化，那「抗疲劳、精力充沛、免疫力」都算违规</li>
+          <li>贬低竞品：比某大牌、吊打、智商税……</li>
+          <li>普通食品不能自称保健品</li>
+          <li>保健食品必须有「本品不能代替药物」</li>
+        </ol></div>
+        <div class="box"><h3>这次的结果</h3><div class="data">命中 1 处
+1. [缺少规定声明] 保健食品内容必须包含「本品不能代替药物」
+
+<span class="hl">没抓到的</span>：「加班党」「加班到晚上十点」
+→ 「加班」不在任何词表里，规则看不出这是在暗示抗疲劳</div></div>
+      </div>
+      <details class="trans"><summary>代码翻译成人话</summary>
+        <div class="tr"><div class="c">body = text.replace(decl, "")
+for ph in rules["法定用语"]:
+    body = body.replace(ph, "")</div><div class="h">先把规定声明和法定警示语拿掉再扫。v1.3 时「保健食品不是药物，不能代替药物治疗疾病」里的「治疗」被误抓过，这是修复。</div></div>
+        <div class="tr"><div class="c">for pat in rules["极限词"]:
+    for m in re.finditer(pat, body):
+        add("广告法极限词", m.group(0), m.start())</div><div class="h">拿极限词表里的每个词去文里找，找到一个就记一条：哪类、哪个词、前后各 12 个字的上下文。其他几类同理。</div></div>
+        <div class="tr"><div class="c">if cat in approved_cats:
+    continue</div><div class="h">这一类功效是批准过的（P03 的抗氧化），可以写，跳过不扫。</div></div>
+        <div class="tr"><div class="c">missing_decl = 保健食品 and decl not in text</div><div class="h">是保健食品、却没写「本品不能代替药物」，记一处。</div></div>
+      </details>
+      <div class="why"><b>为什么规则和模型都要</b><span>评测里 30 条违规文案：直白的说法（「增强免疫力」「最好喝」）规则 100% 抓到；暗示的说法（「再也没在换季倒下过」）规则 0% 抓到。规则稳定、零成本、法务能直接改，负责明面上的词；意思层面交给下一步的模型。</span></div>
+      <div class="nav"><a href="#n-d" data-go="d">← D 内容生成Agent</a><a href="#n-f" data-go="f">下一步：F 合规审核Agent →</a></div>
+    </article>
+
+    <!-- F -->
+    <article class="detail llm" id="n-f" data-id="f">
+      <div class="dh"><i class="ic">AI</i><h2>F 合规审核Agent</h2><span class="kind">模型节点 · DeepSeek v4-flash · 温度 0.2</span><span class="dstat">43.4 s · 8,978 token</span></div>
+      <p class="analogy">像<b>法务审稿</b>：拿着扫描仪的结果和商品资料，先改掉命中的词，再逐句读一遍，找扫描仪看不出来的「话里有话」，最后交出改好的终稿。</p>
+      <div class="cols">
+        <div class="box"><h3>提示词里定的规矩（翻译）</h3><ul>
+          <li>规则命中的每一处必须改掉</li>
+          <li>再找暗示：标题、正文、话题标签、脚本画面、主图文案逐项看；谐音、emoji、前后对比画面都算</li>
+          <li>只动有问题的句子，不整段重写</li>
+          <li>改写后不能保留暗示，不能编资料里没有的信息；拿不准就删</li>
+          <li>按固定格式输出：审核结论 / 修改说明 / 终稿</li>
+        </ul></div>
+        <div class="box"><h3>这次改了 5 处</h3><div class="data">标题　<span class="del">加班党</span>的营养补充 → <span class="ok">上班族的日常</span>营养补充
+　　　原因：绑定加班人群会暗示抗疲劳
+镜头1　<span class="del">加班到</span>晚上十点 → <span class="ok">晚上十点了</span>
+　　　原因：去掉加班和产品的因果暗示
+镜头3　<span class="del">怕吞大胶囊的人也能轻松一点</span> → <span class="ok">吞咽不费劲</span>
+　　　原因：避免和「大胶囊」比较
+镜头5　补上「<span class="ok">本品不能代替药物</span>」和不适宜人群
+主图1　每粒50mg → 每粒50mg｜<span class="ok">本品不能代替药物</span></div></div>
+      </div>
+      <div class="pit"><b>它最贵，也最容易过头</b><span>这一次占了全流程约 68% 的 token、72% 的时间，因为要读整篇初稿和商品资料，再完整写一遍终稿。v1.4 收紧提示词后，违规拦截从 90% 升到 100%，但正常文案也开始被误改（0% → 5.6%）。镜头 1 的「夜晚工位」画面还在，算边界情况，需要人再看一眼。</span></div>
+      <div class="why"><b>为什么温度又调回 0.2</b><span>审核要稳，同一句话今天判违规、明天判通过是不行的。</span></div>
+      <div class="nav"><a href="#n-e" data-go="e">← E 合规规则检查</a><a href="#n-g" data-go="g">下一步：G 终稿复检与报告组装 →</a></div>
+    </article>
+
+    <!-- G -->
+    <article class="detail code" id="n-g" data-id="g">
+      <div class="dh"><i class="ic">{ }</i><h2>G 终稿复检与报告组装</h2><span class="kind">代码节点</span><span class="dstat">440 ms · 0 token</span></div>
+      <p class="analogy">像<b>终审 + 排版</b>：法务改完的稿子，再用同一台扫描仪扫一遍才放行；然后把终稿、卖点出处、三层审核记录装订成一份报告，交给设计师和品牌部。</p>
+      <div class="cols">
+        <div class="box"><h3>它做的事</h3><ol>
+          <li>从审核Agent 的输出里，切出【终稿】那一段</li>
+          <li>用和 E 完全一样的规则再扫一遍</li>
+          <li>保健食品还缺声明 → 自动补上</li>
+          <li>还有别的命中 → 标「⚠️ 需人工处理」，不放行</li>
+          <li>审核Agent 没按格式输出 → 标「⚠️ 未审核初稿」，不放行</li>
+          <li>拼报告：状态、终稿、卖点溯源表、合规审核记录</li>
+        </ol></div>
+        <div class="box"><h3>这次的结果</h3><div class="data">终稿规则复检：<span class="ok">无命中</span>
+状态：<span class="ok">✅ 可交付设计师精修</span>
+
+报告结构
+一、终稿（标题、6 个镜头、主图需求单）
+二、卖点溯源表（7 条，全部采用）
+三、合规审核记录
+　① 规则初检 1 处　② 审核Agent 改 5 处　③ 复检 0 处</div></div>
+      </div>
+      <details class="trans"><summary>代码翻译成人话</summary>
+        <div class="tr"><div class="c">final = review_text.split("【终稿】", 1)[1]</div><div class="h">以「【终稿】」为界，取后面那一段作为终稿。所以 F 的提示词要求终稿必须放在最后。</div></div>
+        <div class="tr"><div class="c">hits, missing = scan(final, prod, rules)</div><div class="h">和 E 用同一个扫描函数、同一份词表。模型改过的东西也要验。</div></div>
+        <div class="tr"><div class="c">if missing:
+    final += "（本品不能代替药物）"</div><div class="h">缺声明这种确定的事，直接用代码补，不再麻烦模型。</div></div>
+        <div class="tr"><div class="c">if hits:
+    status = "⚠️ 需人工处理"
+else:
+    status = "✅ 可交付设计师精修"</div><div class="h">只要复检还有命中，就不放行，交给人。</div></div>
+      </details>
+      <div class="why"><b>为什么要「再扫一遍」</b><span>v1.1 测试时，运营要求「主打改善便秘」，初稿标题写成「噗噗顺畅✨」，审核Agent 改了正文却漏了标题，终稿仍被标成可交付。加上这一步，模型漏改的明面问题一定会被拦下来。</span></div>
+      <div class="nav"><a href="#n-f" data-go="f">← F 合规审核Agent</a><a href="#n-end" data-go="end">下一步：结束 →</a></div>
+    </article>
+
+    <!-- 结束 -->
+    <article class="detail io" id="n-end" data-id="end">
+      <div class="dh"><i class="ic">■</i><h2>结束</h2><span class="kind">输出</span><span class="dstat">0 ms</span></div>
+      <p class="analogy">把 G 拼好的报告原样交出去。Dify 右侧「结果」面板看到的，就是这份报告。</p>
+      <div class="why"><b>为什么只输出一个变量</b><span>原来同时输出 report 和 status 两个变量，Dify 会把结果显示成一大段代码格式的文字，很难阅读。改成只输出 report 以后，结果面板会直接排版显示。</span></div>
+      <div class="nav"><a href="#n-g" data-go="g">← G 终稿复检与报告组装</a><a href="#top-canvas" data-go="start">回到画布 ↑</a></div>
+    </article>
+  </div>
+
+  <section class="sum">
+    <h2>一张表看懂：谁用模型，谁用代码</h2>
+    <div class="tbl"><table>
+      <thead><tr><th>节点</th><th>谁来做</th><th>像公司里的谁</th><th>花钱吗</th><th>同样输入，结果每次一样吗</th><th>这次耗时</th></tr></thead>
+      <tbody>
+        <tr><td><i class="dot code"></i>A 商品资料与规则库</td><td>代码</td><td>资料员</td><td>不花</td><td>一样</td><td class="num">0.14 s</td></tr>
+        <tr><td><i class="dot llm"></i>B 商品理解Agent</td><td>模型</td><td>商品研究员</td><td>2,080 token</td><td>大体一样，措辞会变</td><td class="num">7.2 s</td></tr>
+        <tr><td><i class="dot code"></i>C 卖点溯源校验</td><td>代码</td><td>核对员</td><td>不花</td><td>一样</td><td class="num">0.09 s</td></tr>
+        <tr><td><i class="dot llm"></i>D 内容生成Agent</td><td>模型</td><td>文案</td><td>2,111 token</td><td>每次都不一样</td><td class="num">8.8 s</td></tr>
+        <tr><td><i class="dot code"></i>E 合规规则检查</td><td>代码</td><td>违禁词扫描仪</td><td>不花</td><td>一样</td><td class="num">0.08 s</td></tr>
+        <tr><td><i class="dot llm"></i>F 合规审核Agent</td><td>模型</td><td>法务审稿</td><td>8,978 token</td><td>大体一样，偶尔标准不稳</td><td class="num">43.4 s</td></tr>
+        <tr><td><i class="dot code"></i>G 终稿复检与报告组装</td><td>代码</td><td>终审 + 排版</td><td>不花</td><td>一样</td><td class="num">0.44 s</td></tr>
+        <tr><td><b>合计</b></td><td>3 个模型 + 4 个代码</td><td></td><td class="num">13,169 token</td><td></td><td class="num">约 60 s</td></tr>
+      </tbody>
+    </table></div>
+    <div class="takeaways">
+      <div><b>固定编排，不让模型决定下一步</b><span>写种草内容的流程本来就是确定的。顺序写死，成本有上限，结果能复现。</span></div>
+      <div><b>模型和代码交替站岗</b><span>每个模型节点后面都跟着一个代码节点检查它：B 后面是 C，D 后面是 E，F 后面是 G。</span></div>
+      <div><b>规则管字，模型管意思</b><span>明面上的违禁词交给规则，零成本、不会漏；「加班党」这种话里有话交给模型。</span></div>
+    </div>
+  </section>
+
+  <p class="foot">品牌「元养」、商品、批准文号、评价均为虚构演示数据。耗时和 token 来自 Dify 运行记录（2026-10-27，生成用例 G08，DeepSeek v4-flash）。</p>
+</div>
+
+<script>
+(function(){
+  var order=["start","a","b","c","d","e","f","g","end"];
+  var names={start:"开始",a:"A 商品资料与规则库",b:"B 商品理解Agent",c:"C 卖点溯源校验",d:"D 内容生成Agent",e:"E 合规规则检查",f:"F 合规审核Agent",g:"G 终稿复检与报告组装",end:"结束"};
+  var nodes=document.querySelectorAll(".node"), details=document.querySelectorAll(".detail");
+  var label=document.getElementById("stepLabel"), prev=document.getElementById("prev"), next=document.getElementById("next");
+  var cur="start", lockUntil=0;
+  var reduce=window.matchMedia&&window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  function mark(id){
+    cur=id; var i=order.indexOf(id);
+    nodes.forEach(function(n){n.setAttribute("aria-current",n.dataset.id===id?"true":"false")});
+    details.forEach(function(d){d.classList.toggle("active",d.dataset.id===id)});
+    label.textContent="第 "+(i+1)+" / 9 步："+names[id];
+    prev.disabled=i===0; next.disabled=i===order.length-1;
+    var n=document.querySelector('.node[data-id="'+id+'"]');
+    if(n){var box=n.closest(".canvas-box");var l=n.offsetLeft-box.clientWidth/2+n.offsetWidth/2;box.scrollTo({left:l,behavior:reduce?"auto":"smooth"})}
+  }
+  function go(id,scroll){
+    mark(id);
+    if(scroll){lockUntil=Date.now()+900;document.getElementById("n-"+id).scrollIntoView({behavior:reduce?"auto":"smooth",block:"start"})}
+  }
+  nodes.forEach(function(n){n.addEventListener("click",function(){go(n.dataset.id,true)})});
+  prev.addEventListener("click",function(){var i=order.indexOf(cur);if(i>0)go(order[i-1],true)});
+  next.addEventListener("click",function(){var i=order.indexOf(cur);if(i<order.length-1)go(order[i+1],true)});
+  document.querySelectorAll("[data-go]").forEach(function(a){a.addEventListener("click",function(e){
+    e.preventDefault(); var id=a.dataset.go;
+    if(a.getAttribute("href")==="#top-canvas"){mark(id);document.querySelector(".canvas-box").scrollIntoView({behavior:reduce?"auto":"smooth",block:"center"});return}
+    go(id,true)})});
+  if("IntersectionObserver" in window){
+    var io=new IntersectionObserver(function(es){
+      if(Date.now()<lockUntil)return;
+      es.forEach(function(e){if(e.isIntersecting)mark(e.target.dataset.id)})
+    },{rootMargin:"-35% 0px -55% 0px"});
+    details.forEach(function(d){io.observe(d)});
+  }
+  mark("start");
+})();
+</script>
