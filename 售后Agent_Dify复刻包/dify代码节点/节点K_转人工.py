@@ -73,9 +73,10 @@ def _find(order_id, buyer_id, shop):
     return o, None
 
 
-def _ticket(order_id, ticket_type):
-    """生成演示用工单号（同一订单同一类型得到同一个号，方便复现）。"""
-    s = (order_id or "NA") + ticket_type
+def _ticket(order_id, ticket_type, buyer_id=""):
+    """生成演示用工单号（同一订单同一类型得到同一个号，方便复现）。
+    v1.2：没有订单号时把买家 ID 一起算进去，避免不同买家拿到同一个工单号（v1.1 评测里 C02、C03 撞号）。"""
+    s = (order_id or ("NA-" + (buyer_id or ""))) + ticket_type
     h = 0
     for ch in s:
         h = (h * 31 + ord(ch)) % 1000000
@@ -90,7 +91,7 @@ COMPLAINT = re.compile(r"投诉|差评|举报|曝光|12315|赔|补偿|退钱|垃
 def main(query: str, order_id: str, buyer_id: str, shop: str) -> dict:
     o, err = _find(order_id, buyer_id, shop)
     oid = o["order_id"] if o else ""
-    tk = _ticket(oid, "转人工")
+    tk = _ticket(oid, "转人工", buyer_id)
     if COMPLAINT.search(query or ""):
         ans = "非常抱歉给您带来不好的体验。您的问题我已经转给人工客服专员（工单 " + tk + "）"
     else:

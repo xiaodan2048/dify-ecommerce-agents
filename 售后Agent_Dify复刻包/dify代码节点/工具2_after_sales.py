@@ -84,9 +84,10 @@ def _find(order_id, buyer_id, shop):
     return o, None
 
 
-def _ticket(order_id, ticket_type):
-    """生成演示用工单号（同一订单同一类型得到同一个号，方便复现）。"""
-    s = (order_id or "NA") + ticket_type
+def _ticket(order_id, ticket_type, buyer_id=""):
+    """生成演示用工单号（同一订单同一类型得到同一个号，方便复现）。
+    v1.2：没有订单号时把买家 ID 一起算进去，避免不同买家拿到同一个工单号（v1.1 评测里 C02、C03 撞号）。"""
+    s = (order_id or ("NA-" + (buyer_id or ""))) + ticket_type
     h = 0
     for ch in s:
         h = (h * 31 + ord(ch)) % 1000000
@@ -255,7 +256,7 @@ def _create_ticket(order_id, buyer_id, shop, ticket_type, summary, buyer_confirm
                "message": "这是写操作：请先向买家复述要办理的事项并征得同意，买家同意后再调用，buyer_confirmed 传 是"}
     else:
         oid = o["order_id"] if o else ""
-        res = {"ok": True, "ticket_id": _ticket(oid, tt), "ticket_type": tt, "order_id": oid,
+        res = {"ok": True, "ticket_id": _ticket(oid, tt, buyer_id), "ticket_type": tt, "order_id": oid,
                "summary": (summary or "")[:200],
                "message": "工单已创建。转人工类：人工客服会尽快接入；其他类：相关团队会跟进处理。不要向买家承诺具体完成时间。"}
     return {"result": json.dumps(res, ensure_ascii=False)}
